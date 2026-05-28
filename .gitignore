@@ -1,0 +1,29 @@
+# Rust build output
+/target/
+**/*.rs.bk
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# AI
+.antigravitycli
+.agents
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and temp files
+*.log
+*.tmp
+*.bak
+tmp/
+.cache/
+
+# Env / local config
+.env
+.env.local
