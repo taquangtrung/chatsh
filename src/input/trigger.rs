@@ -6,6 +6,7 @@ const HINT_TEXT: &str = concat!(
     "\x1b[1;36m/chat\x1b[0m   : Chat with AI\r\n",
     "\x1b[1;36m/new\x1b[0m    : Start a fresh conversation\r\n",
     "\x1b[1;36m/connect\x1b[0m: Connect to provider\r\n",
+    "\x1b[1;36m/reauth\x1b[0m : Re-authenticate a provider\r\n",
     "\x1b[1;36m/model\x1b[0m  : List or select model\r\n",
     "\x1b[1;36m/exit\x1b[0m   : Quit chatsh",
 );
@@ -14,14 +15,17 @@ pub struct Command {
     pub name: &'static str,
     pub takes_args: bool,
     pub requires_args: bool,
+    /// Shown below the prompt when Enter is pressed without a required argument.
+    pub arg_hint: &'static str,
 }
 
 const COMMANDS: &[Command] = &[
-    Command { name: "/chat", takes_args: true, requires_args: true },
-    Command { name: "/connect", takes_args: true, requires_args: false },
-    Command { name: "/model", takes_args: true, requires_args: false },
-    Command { name: "/new", takes_args: false, requires_args: false },
-    Command { name: "/exit", takes_args: false, requires_args: false },
+    Command { name: "/chat",    takes_args: true,  requires_args: true,  arg_hint: "<query>"    },
+    Command { name: "/connect", takes_args: true,  requires_args: false, arg_hint: "<provider>" },
+    Command { name: "/reauth",  takes_args: true,  requires_args: true,  arg_hint: "<provider>" },
+    Command { name: "/model",   takes_args: true,  requires_args: false, arg_hint: "[model-id]" },
+    Command { name: "/new",     takes_args: false, requires_args: false, arg_hint: ""           },
+    Command { name: "/exit",    takes_args: false, requires_args: false, arg_hint: ""           },
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,6 +35,7 @@ pub enum InputAction {
     Model { name: Option<String> },
     NewChat,
     Passthrough,
+    Reauth { provider: String },
     ShowHint,
     TriggerChat { query: String },
 }
@@ -42,7 +47,7 @@ pub fn complete(prefix: &str) -> Vec<&'static Command> {
         .collect()
 }
 
-const PROVIDERS: &[&str] = &["anthropic", "copilot", "openai", "zai"];
+const PROVIDERS: &[&str] = &["anthropic", "github-copilot", "openai", "z.ai-coding-plan"];
 
 pub fn complete_providers(prefix: &str) -> Vec<&'static str> {
     PROVIDERS
@@ -54,27 +59,28 @@ pub fn complete_providers(prefix: &str) -> Vec<&'static str> {
 
 pub fn classify_input(line: &str) -> InputAction {
     let trimmed = line.trim();
-    if line.starts_with(TRIGGER_PREFIX) {
-        let query = line[TRIGGER_PREFIX.len()..].trim().to_string();
-        InputAction::TriggerChat { query }
+    if let Some(query) = line.strip_prefix(TRIGGER_PREFIX) {
+        InputAction::TriggerChat {
+            query: query.trim().to_string(),
+        }
     } else if trimmed == "/connect" || trimmed.starts_with("/connect ") {
-        let provider = if trimmed == "/connect" {
-            String::new()
-        } else {
-            trimmed["/connect ".len()..].trim().to_string()
-        };
+        let provider = trimmed
+            .strip_prefix("/connect ")
+            .map(|rest| rest.trim().to_string())
+            .unwrap_or_default();
         InputAction::Connect { provider }
+    } else if trimmed.starts_with("/reauth ") {
+        let provider = trimmed
+            .strip_prefix("/reauth ")
+            .map(|rest| rest.trim().to_string())
+            .unwrap_or_default();
+        InputAction::Reauth { provider }
     } else if trimmed == "/model" || trimmed.starts_with("/model ") {
-        let name = if trimmed == "/model" {
-            None
-        } else {
-            let n = trimmed["/model ".len()..].trim().to_string();
-            if n.is_empty() {
-                None
-            } else {
-                Some(n)
-            }
-        };
+        let name = trimmed
+            .strip_prefix("/model ")
+            .map(str::trim)
+            .filter(|rest| !rest.is_empty())
+            .map(str::to_string);
         InputAction::Model { name }
     } else if trimmed == EXIT_COMMAND {
         InputAction::Exit
@@ -158,8 +164,34 @@ mod tests {
     }
 
     #[test]
+    fn test_hint_text_contains_reauth() {
+        assert!(hint_text().contains("/reauth"));
+    }
+
+    #[test]
     fn test_hint_text_contains_model() {
         assert!(hint_text().contains("/model"));
+    }
+
+    #[test]
+    fn test_reauth_with_provider() {
+        assert_eq!(
+            classify_input("/reauth copilot"),
+            InputAction::Reauth { provider: "copilot".to_string() }
+        );
+    }
+
+    #[test]
+    fn test_reauth_strips_whitespace() {
+        assert_eq!(
+            classify_input("/reauth   z.ai-coding-plan  "),
+            InputAction::Reauth { provider: "z.ai-coding-plan".to_string() }
+        );
+    }
+
+    #[test]
+    fn test_reauth_not_prefix_match() {
+        assert_eq!(classify_input("/reauthenticating"), InputAction::Passthrough);
     }
 
     #[test]
@@ -190,9 +222,9 @@ mod tests {
     #[test]
     fn test_connect_with_provider() {
         assert_eq!(
-            classify_input("/connect copilot"),
+            classify_input("/connect github-copilot"),
             InputAction::Connect {
-                provider: "copilot".to_string()
+                provider: "github-copilot".to_string()
             }
         );
     }
@@ -200,9 +232,9 @@ mod tests {
     #[test]
     fn test_connect_strips_whitespace() {
         assert_eq!(
-            classify_input("/connect   zai  "),
+            classify_input("/connect   z.ai-coding-plan  "),
             InputAction::Connect {
-                provider: "zai".to_string()
+                provider: "z.ai-coding-plan".to_string()
             }
         );
     }
@@ -245,7 +277,7 @@ mod tests {
     #[test]
     fn test_complete_slash_lists_all() {
         let m = complete("/");
-        assert_eq!(m.len(), 5);
+        assert_eq!(m.len(), 6);
     }
 
     #[test]
@@ -297,19 +329,19 @@ mod tests {
     #[test]
     fn test_complete_providers_empty_prefix() {
         let m = complete_providers("");
-        assert_eq!(m, vec!["anthropic", "copilot", "openai", "zai"]);
+        assert_eq!(m, vec!["anthropic", "github-copilot", "openai", "z.ai-coding-plan"]);
     }
 
     #[test]
     fn test_complete_providers_single_char() {
         let m = complete_providers("z");
-        assert_eq!(m, vec!["zai"]);
+        assert_eq!(m, vec!["z.ai-coding-plan"]);
     }
 
     #[test]
     fn test_complete_providers_partial() {
-        let m = complete_providers("co");
-        assert_eq!(m, vec!["copilot"]);
+        let m = complete_providers("gi");
+        assert_eq!(m, vec!["github-copilot"]);
     }
 
     #[test]
@@ -320,8 +352,8 @@ mod tests {
 
     #[test]
     fn test_complete_providers_exact() {
-        let m = complete_providers("copilot");
-        assert_eq!(m, vec!["copilot"]);
+        let m = complete_providers("github-copilot");
+        assert_eq!(m, vec!["github-copilot"]);
     }
 
     #[test]

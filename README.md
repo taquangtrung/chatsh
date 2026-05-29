@@ -36,44 +36,95 @@ exec chatsh $SHELL
 | Input | Action |
 |---|---|
 | `/chat <question>` | Stream an AI answer using recent terminal output as context |
-| `/connect` | Show the currently connected provider |
-| `/connect <provider>` | Switch provider: `anthropic`, `copilot`, `openai`, or `zai` |
+| `/connect` | List connected providers and the active one |
+| `/connect <provider>` | Connect or switch provider |
+| `/reauth <provider>` | Re-authenticate a provider (refresh token or re-enter API key) |
 | `/model` | List available models for the current provider |
-| `/model <name>` | Select a model on the current provider |
+| `/model <name>` | Select a model |
+| `/new` | Start a fresh conversation (clears history) |
 | `/exit` | Quit chatsh |
-| `/` then Tab / arrows | Cycle command suggestions |
+| `/` then Tab / ↑↓ | Cycle command completions |
 | `/<path><Tab>` | Falls through to shell path completion (e.g. `/bin/<Tab>`) |
 | Anything else | Passed through to your shell untouched |
 
-Examples:
+Available providers: `github-copilot`, `z.ai-coding-plan`, `anthropic`, `openai`.
+
+### Tab completion
+
+Pressing Tab on a command with arguments shows completions inline:
+
+- `/connect <Tab>` — cycles through providers
+- `/reauth <Tab>` — cycles through providers
+- `/model <Tab>` — fetches and cycles through models from the active provider in real time
+
+If you press Enter on a command that requires an argument (e.g. `/chat` or `/reauth`) without typing one, chatsh reminds you with a dim hint below the prompt instead of executing.
+
+## Examples
+
+### GitHub Copilot (OAuth device flow)
 
 ```
-❯ /connect anthropic
-❯ /model claude-sonnet-4-20250514
-❯ /chat summarize the last error
+❯ /connect github-copilot
+
+  Open https://github.com/login/device in your browser
+  and enter code: ABCD-1234
+
+  Waiting...
+  GitHub Copilot connected!
+
+❯ /model <Tab>          # fetches models live
+❯ /model claude-sonnet-4
+  Model set to claude-sonnet-4 [1x].
+
+❯ /chat why is my build failing?
+```
+
+### Z.ai Coding Plan (API key)
+
+```
+❯ export ZAI_API_KEY=<your-key>
+
+  (chatsh reads the key automatically on startup)
+
+❯ /connect z.ai-coding-plan
+  Z.ai Coding Plan API key (leave empty to cancel): ****
+  Verifying API key...
+  Connected to Z.ai Coding Plan.
+
+❯ /model
+  Models (z.ai-coding-plan):
+    glm-5.1 - GLM-5.1 [?] (128k ctx)
+  * glm-4.6 - GLM-4.6 [?] (128k ctx)
+    glm-4.5 - GLM-4.5 [?] (128k ctx)
+
+❯ /chat explain this error
 ```
 
 ## Configuration
 
 ### API keys
 
-Set one of:
+Set one of the following environment variables before starting chatsh:
 
-| Variable | Backend |
+| Variable | Provider |
 |---|---|
+| `GITHUB_COPILOT_TOKEN` | GitHub Copilot (alternatively use `/connect github-copilot` for the device flow) |
+| `ZAI_API_KEY` | Z.ai Coding Plan |
 | `ANTHROPIC_API_KEY` | Anthropic (Claude) |
-| `GITHUB_COPILOT_TOKEN` | GitHub Copilot |
-| `ZAI_API_KEY` | Z.ai |
 | `OPENAI_API_KEY` | OpenAI |
 
-Override via CLI: `chatsh --provider copilot --model gpt-4o`.
+Override provider and model at launch:
+
+```bash
+chatsh --provider github-copilot --model gpt-4o
+```
 
 ### `~/.config/chatsh/config.toml` (optional)
 
 ```toml
 [ai]
-provider = "auto"   # auto | anthropic | copilot | zai | openai
-model = "claude-sonnet-4-20250514"
+provider = "auto"   # auto | github-copilot | z.ai-coding-plan | anthropic | openai
+model = "claude-sonnet-4"
 
 [context]
 buffer_lines = 200
@@ -81,12 +132,12 @@ buffer_lines = 200
 
 ### Session marker in your prompt
 
-`chatsh` sets `CHATSH_SESSION=1` on the wrapped shell. Hook it for a visual "you're in chatsh" cue. Example for Starship — adds a cyan `✦` before the prompt character:
+`chatsh` sets `CHATSH_SESSION=1` on the wrapped shell. Hook it for a visual "you're in chatsh" cue. Example for Starship — adds the ✨ symbol before the prompt character:
 
 ```toml
 [custom.chatsh_badge]
 when = '[ -n "$CHATSH_SESSION" ]'
-format = "[✦]($style) "
+format = "[✨]($style) "
 style = "bold cyan"
 ```
 

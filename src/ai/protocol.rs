@@ -59,14 +59,6 @@ pub struct ModelInfo {
     pub context_tokens: u32,
 }
 
-#[derive(Clone, Debug)]
-pub enum QuotaSnapshot {
-    Unlimited,
-    PerRequest { used: u32, limit: u32, resets_at: i64 },
-    PerToken { spent_cents: u64 },
-    Unknown,
-}
-
 // ========================================================================
 // Tests
 // ========================================================================

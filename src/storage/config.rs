@@ -7,7 +7,7 @@ const DEFAULT_CONFIG_DIR: &str = ".config/chatsh";
 const DEFAULT_CONFIG_FILE: &str = "config.toml";
 const DEFAULT_BUFFER_LINES: usize = 200;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub ai: AiConfig,
@@ -31,20 +31,10 @@ pub struct ContextConfig {
     pub buffer_lines: usize,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct UiConfig {
     #[serde(default)]
     pub overlay_height: Option<u16>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            ai: AiConfig::default(),
-            context: ContextConfig::default(),
-            ui: UiConfig::default(),
-        }
-    }
 }
 
 impl Default for AiConfig {
@@ -60,14 +50,6 @@ impl Default for ContextConfig {
     fn default() -> Self {
         Self {
             buffer_lines: default_buffer_lines(),
-        }
-    }
-}
-
-impl Default for UiConfig {
-    fn default() -> Self {
-        Self {
-            overlay_height: None,
         }
     }
 }
@@ -135,14 +117,14 @@ mod tests {
     fn test_config_parse_toml() {
         let toml = r#"
 [ai]
-provider = "zai"
+provider = "z.ai-coding-plan"
 model = "glm-4.6"
 
 [context]
 buffer_lines = 100
 "#;
         let config: Config = toml::from_str(toml).unwrap();
-        assert_eq!(config.ai.provider, "zai");
+        assert_eq!(config.ai.provider, "z.ai-coding-plan");
         assert_eq!(config.ai.model.as_deref(), Some("glm-4.6"));
         assert_eq!(config.context.buffer_lines, 100);
     }

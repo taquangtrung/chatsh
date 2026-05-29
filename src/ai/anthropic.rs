@@ -8,9 +8,9 @@ use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::ai::auth::AuthStrategy;
-use crate::ai::provider::LlmProvider;
-use crate::types::{ChatEvent, ChatMessage, ChatRequest, ChatRole, ModelInfo, QuotaSnapshot};
+use crate::ai::AuthStrategy;
+use crate::ai::LlmProvider;
+use crate::ai::{ChatEvent, ChatMessage, ChatRequest, ChatRole, ModelInfo};
 
 pub struct AnthropicProvider {
     id: String,
@@ -74,6 +74,7 @@ impl LlmProvider for AnthropicProvider {
             .client
             .get(url)
             .header("x-api-key", &key)
+            .header("authorization", format!("Bearer {key}"))
             .header("anthropic-version", "2023-06-01")
             .send()
             .await
@@ -91,25 +92,27 @@ impl LlmProvider for AnthropicProvider {
         if body.data.is_empty() {
             return Ok(self.default_models.clone());
         }
+        let by_id: std::collections::HashMap<&str, &ModelInfo> = self
+            .default_models
+            .iter()
+            .map(|m| (m.id.as_str(), m))
+            .collect();
         Ok(body
             .data
             .into_iter()
             .map(|m| {
-                let display_name = m
-                    .display_name
-                    .clone()
-                    .unwrap_or_else(|| m.id.clone());
+                let known = by_id.get(m.id.as_str());
                 ModelInfo {
+                    display_name: m
+                        .display_name
+                        .filter(|s| !s.is_empty())
+                        .or_else(|| known.map(|k| k.display_name.clone()))
+                        .unwrap_or_else(|| m.id.clone()),
+                    context_tokens: known.map(|k| k.context_tokens).unwrap_or(128_000),
                     id: m.id,
-                    display_name,
-                    context_tokens: 128_000,
                 }
             })
             .collect())
-    }
-
-    async fn quota(&self) -> anyhow::Result<QuotaSnapshot> {
-        Ok(QuotaSnapshot::PerToken { spent_cents: 0 })
     }
 
     async fn chat(&self, req: ChatRequest) -> anyhow::Result<BoxStream<'static, ChatEvent>> {
@@ -122,7 +125,8 @@ impl LlmProvider for AnthropicProvider {
         let stream = try_stream! {
             let resp = client
                 .post(url)
-                .header("x-api-key", key)
+                .header("x-api-key", &key)
+                .header("authorization", format!("Bearer {key}"))
                 .header("anthropic-version", "2023-06-01")
                 .header("content-type", "application/json")
                 .json(&body)
@@ -216,9 +220,6 @@ fn supports_thinking(model: &str) -> bool {
     m.starts_with("claude-opus-4")
         || m.starts_with("claude-sonnet-4")
         || m.starts_with("claude-haiku-4")
-        || m.starts_with("glm-4.5")
-        || m.starts_with("glm-4.6")
-        || m.starts_with("glm-5")
 }
 
 impl From<&ChatRequest> for AnthropicRequest {
@@ -339,7 +340,7 @@ mod tests {
     fn test_supports_thinking() {
         assert!(supports_thinking("claude-sonnet-4-20250514"));
         assert!(supports_thinking("claude-opus-4-7"));
-        assert!(supports_thinking("glm-4.6"));
+        assert!(!supports_thinking("glm-4.6"));
         assert!(!supports_thinking("gpt-4o"));
     }
 

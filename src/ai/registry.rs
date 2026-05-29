@@ -3,8 +3,8 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use futures::stream::BoxStream;
 
-use crate::ai::provider::LlmProvider;
-use crate::types::{ChatEvent, ChatRequest};
+use crate::ai::LlmProvider;
+use crate::ai::{ChatEvent, ChatRequest};
 
 #[derive(Default)]
 pub struct ProviderRegistry {
@@ -50,7 +50,7 @@ impl ProviderRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{ModelInfo, QuotaSnapshot};
+    use crate::ai::ModelInfo;
     use async_trait::async_trait;
     use futures::stream::{self, StreamExt};
 
@@ -68,9 +68,6 @@ mod tests {
         }
         async fn list_models(&self) -> Result<Vec<ModelInfo>> {
             Ok(vec![])
-        }
-        async fn quota(&self) -> Result<QuotaSnapshot> {
-            Ok(QuotaSnapshot::Unknown)
         }
         async fn chat(&self, _req: ChatRequest) -> Result<BoxStream<'static, ChatEvent>> {
             Ok(stream::iter(vec![ChatEvent::Done]).boxed())

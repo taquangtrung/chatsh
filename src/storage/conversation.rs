@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use crate::types::ChatMessage;
+use crate::ai::ChatMessage;
 
 const DEFAULT_DIR: &str = ".config/chatsh";
 const DEFAULT_FILE: &str = "conversation.jsonl";
@@ -83,7 +83,7 @@ impl Conversation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::ChatRole;
+    use crate::ai::ChatRole;
 
     #[test]
     fn test_new_is_empty() {

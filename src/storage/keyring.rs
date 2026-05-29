@@ -24,12 +24,6 @@ pub fn get_secret(key: &str) -> Result<Option<String>> {
     }
 }
 
-pub fn delete_secret(key: &str) -> Result<()> {
-    let entry = keyring_core::Entry::new(SERVICE, key)?;
-    entry.delete_credential()?;
-    Ok(())
-}
-
 // ========================================================================
 // Tests
 // ========================================================================

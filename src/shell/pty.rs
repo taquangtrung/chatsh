@@ -6,6 +6,7 @@ use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 
 const DEFAULT_COLS: u16 = 80;
 const DEFAULT_ROWS: u16 = 24;
+const READ_BUF_SIZE: usize = 8192;
 
 pub struct PtyBridge {
     writer: Box<dyn Write + Send>,
@@ -46,7 +47,7 @@ impl PtyBridge {
         let (tx, rx) = mpsc::channel::<Vec<u8>>();
         std::thread::spawn(move || {
             let mut reader = reader;
-            let mut buf = [0u8; 8192];
+            let mut buf = [0u8; READ_BUF_SIZE];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,

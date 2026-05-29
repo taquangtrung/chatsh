@@ -1,4 +1,4 @@
-use crate::tui::syntax::Highlighter;
+use crate::tui::Highlighter;
 
 // Atom One Dark palette (24-bit truecolor escapes).
 const C_DIM: &str = "\x1b[38;2;92;99;112m";

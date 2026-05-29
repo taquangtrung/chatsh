@@ -1,6 +1,6 @@
 [package]
 name = "chatsh"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.85"
 description = "PTY-level, shell-agnostic AI chat tool that lives inline in any terminal"
@@ -22,7 +22,6 @@ keyring = "4.0.1"
 keyring-core = "1.0.0"
 parking_lot = "0.12"
 portable-pty = "0.8"
-ratatui = "0.29"
 reqwest = { version = "0.12", default-features = false, features = ["stream", "json", "rustls-tls"] }
 secrecy = "0.8"
 serde = { version = "1", features = ["derive"] }

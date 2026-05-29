@@ -8,10 +8,10 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use url::Url;
 
-use crate::ai::auth::{AuthStrategy, CachedToken, OAuthState};
-use crate::ai::openai_compat::OpenAiCompatChat;
-use crate::ai::provider::LlmProvider;
-use crate::types::{ChatEvent, ChatRequest, ModelInfo, QuotaSnapshot};
+use crate::ai::{AuthStrategy, CachedToken, OAuthState};
+use crate::ai::OpenAiStream;
+use crate::ai::LlmProvider;
+use crate::ai::{ChatEvent, ChatRequest, ModelInfo, PROVIDER_COPILOT};
 
 const COPILOT_CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
 const COPILOT_INTEGRATION_ID: &str = "vscode-chat";
@@ -58,11 +58,6 @@ impl CopilotProvider {
 
     pub fn set_github_token(&self, token: String) {
         *self.state.github_token.write() = Some(SecretString::new(token));
-    }
-
-    pub fn clear_tokens(&self) {
-        *self.state.github_token.write() = None;
-        *self.state.session_token.write() = None;
     }
 
     pub async fn device_flow_start(&self) -> anyhow::Result<DeviceFlowChallenge> {
@@ -166,7 +161,7 @@ impl CopilotProvider {
 #[async_trait]
 impl LlmProvider for CopilotProvider {
     fn id(&self) -> &str {
-        "copilot"
+        PROVIDER_COPILOT
     }
 
     fn display_name(&self) -> &str {
@@ -203,6 +198,14 @@ impl LlmProvider for CopilotProvider {
                     .map(|s| s != "disabled")
                     .unwrap_or(true)
             })
+            .filter(|m| {
+                // Only keep models that support /chat/completions.
+                // If the field is absent (legacy models), assume /chat/completions.
+                m.supported_endpoints.is_empty()
+                    || m.supported_endpoints
+                        .iter()
+                        .any(|e| e == "/chat/completions")
+            })
             .map(|m| {
                 let context_tokens = m
                     .capabilities
@@ -219,10 +222,6 @@ impl LlmProvider for CopilotProvider {
             .collect();
         out.sort_by(|a, b| a.display_name.cmp(&b.display_name));
         Ok(out)
-    }
-
-    async fn quota(&self) -> anyhow::Result<QuotaSnapshot> {
-        Ok(QuotaSnapshot::Unknown)
     }
 
     async fn chat(&self, req: ChatRequest) -> anyhow::Result<BoxStream<'static, ChatEvent>> {
@@ -251,8 +250,8 @@ impl LlmProvider for CopilotProvider {
             HeaderValue::from_static("conversation-panel"),
         );
 
-        OpenAiCompatChat {
-            provider_id: "copilot",
+        OpenAiStream {
+            provider_id: PROVIDER_COPILOT,
             endpoint,
             bearer_token: token,
             extra_headers: headers,
@@ -301,6 +300,10 @@ struct CopilotModel {
     policy: Option<ModelPolicy>,
     #[serde(default)]
     capabilities: Option<ModelCapabilities>,
+    /// Endpoints this model supports (e.g. ["/chat/completions"], ["/responses"]).
+    /// Absent on legacy Azure-backed models, which always support /chat/completions.
+    #[serde(default)]
+    supported_endpoints: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -333,7 +336,7 @@ mod tests {
     fn test_constants() {
         assert_eq!(COPILOT_CLIENT_ID, "Iv1.b507a08c87ecfe98");
         assert_eq!(COPILOT_INTEGRATION_ID, "vscode-chat");
-        assert!(REFRESH_MARGIN_SECONDS > 0);
+        const { assert!(REFRESH_MARGIN_SECONDS > 0) };
     }
 
     #[test]
