@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use futures::stream::BoxStream;
 
 use crate::ai::LlmProvider;
@@ -77,9 +77,7 @@ mod tests {
     #[tokio::test]
     async fn test_registry_dispatch() {
         let mut reg = ProviderRegistry::new();
-        reg.register(Arc::new(FakeProvider {
-            id: "test".into(),
-        }));
+        reg.register(Arc::new(FakeProvider { id: "test".into() }));
         let req = ChatRequest {
             provider_id: "test".into(),
             model: "m".into(),

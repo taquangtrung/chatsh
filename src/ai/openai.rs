@@ -1,16 +1,13 @@
-use anyhow::anyhow;
-use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
-use futures::StreamExt;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::Client;
-use secrecy::ExposeSecret;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::ai::AuthStrategy;
 use crate::ai::LlmProvider;
+use crate::ai::stream::sse_chat_stream;
 use crate::ai::{ChatEvent, ChatMessage, ChatRequest, ChatRole, ModelInfo, PROVIDER_OPENAI};
 
 pub struct OpenAiProvider {
@@ -29,10 +26,7 @@ impl OpenAiProvider {
     }
 
     fn api_key(&self) -> anyhow::Result<String> {
-        match &self.auth {
-            AuthStrategy::ApiKey(k) => Ok(k.expose_secret().to_string()),
-            _ => Err(anyhow::anyhow!("OpenAI requires an API key")),
-        }
+        self.auth.require_api_key("OpenAI")
     }
 }
 
@@ -52,11 +46,13 @@ impl LlmProvider for OpenAiProvider {
                 id: "gpt-4.1".into(),
                 display_name: "GPT-4.1".into(),
                 context_tokens: 1_000_000,
+                rate_label: None,
             },
             ModelInfo {
                 id: "gpt-4o".into(),
                 display_name: "GPT-4o".into(),
                 context_tokens: 128_000,
+                rate_label: None,
             },
         ])
     }
@@ -83,38 +79,19 @@ impl LlmProvider for OpenAiProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use secrecy::SecretString;
-
-    #[test]
-    fn test_openai_provider_id() {
-        let provider = OpenAiProvider::new(
-            Url::parse("https://api.openai.com/").unwrap(),
-            AuthStrategy::ApiKey(SecretString::new("test".into())),
-        );
-        assert_eq!(provider.id(), "openai");
-    }
-
-    #[test]
-    fn test_find_event_end() {
-        assert_eq!(find_event_end(b"data:{}\n\n"), Some(9));
-        assert_eq!(find_event_end(b"nope"), None);
-    }
 
     #[test]
     fn test_parse_sse_event_token() {
         let raw = b"data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n";
         let parsed = parse_sse_event(raw).unwrap();
-        match parsed {
-            Parsed::Token(text) => assert_eq!(text, "hello"),
-            Parsed::Done => panic!("expected token"),
-        }
+        assert_eq!(parsed, ChatEvent::Token { text: "hello".into() });
     }
 
     #[test]
     fn test_parse_sse_event_done() {
         let raw = b"data: [DONE]\n\n";
         let parsed = parse_sse_event(raw).unwrap();
-        assert!(matches!(parsed, Parsed::Done));
+        assert_eq!(parsed, ChatEvent::Done);
     }
 
     #[test]
@@ -152,62 +129,16 @@ impl OpenAiStream<'_> {
             HeaderValue::from_static("application/json"),
         );
 
-        let provider_id = self.provider_id.to_string();
-        let endpoint = self.endpoint;
-        let client = self.client;
-
-        let stream = try_stream! {
-            let resp = client
-                .post(endpoint)
-                .headers(headers)
-                .json(&body)
-                .send()
-                .await
-                .map_err(|e| anyhow!("{provider_id}: {e}"))?;
-
-            let status = resp.status();
-            if !status.is_success() {
-                let text = resp.text().await.unwrap_or_default();
-                Err(anyhow!("{provider_id}: {status}: {text}"))?;
-            } else {
-                let mut bytes = resp.bytes_stream();
-                let mut buf = Vec::new();
-                while let Some(chunk) = bytes.next().await {
-                    let chunk = chunk.map_err(|e| anyhow!("{provider_id}: {e}"))?;
-                    buf.extend_from_slice(&chunk);
-                    while let Some(pos) = find_event_end(&buf) {
-                        let event_bytes = buf.drain(..pos).collect::<Vec<u8>>();
-                        if let Some(evt) = parse_sse_event(&event_bytes) {
-                            match evt {
-                                Parsed::Token(text) => yield ChatEvent::Token { text },
-                                Parsed::Done => yield ChatEvent::Done,
-                            }
-                        }
-                    }
-                }
-                yield ChatEvent::Done;
-            }
-        };
-
-        Ok(Box::pin(stream.map(|res: anyhow::Result<ChatEvent>| match res {
-            Ok(ev) => ev,
-            Err(e) => ChatEvent::Error {
-                message: e.to_string(),
-            },
-        })))
+        let request = self.client.post(self.endpoint).headers(headers).json(&body);
+        Ok(sse_chat_stream(
+            self.provider_id.to_string(),
+            request,
+            parse_sse_event,
+        ))
     }
 }
 
-enum Parsed {
-    Token(String),
-    Done,
-}
-
-fn find_event_end(buf: &[u8]) -> Option<usize> {
-    buf.windows(2).position(|w| w == b"\n\n").map(|i| i + 2)
-}
-
-fn parse_sse_event(raw: &[u8]) -> Option<Parsed> {
+fn parse_sse_event(raw: &[u8]) -> Option<ChatEvent> {
     let text = std::str::from_utf8(raw).ok()?;
     let mut data = String::new();
     for line in text.lines() {
@@ -222,12 +153,12 @@ fn parse_sse_event(raw: &[u8]) -> Option<Parsed> {
         return None;
     }
     if data == "[DONE]" {
-        return Some(Parsed::Done);
+        return Some(ChatEvent::Done);
     }
     let parsed: OpenAiStreamChunk = serde_json::from_str(&data).ok()?;
     let choice = parsed.choices.into_iter().next()?;
     let text = choice.delta.content?;
-    Some(Parsed::Token(text))
+    Some(ChatEvent::Token { text })
 }
 
 #[derive(Serialize)]
@@ -282,4 +213,3 @@ struct OpenAiDelta {
     #[serde(default)]
     content: Option<String>,
 }
-

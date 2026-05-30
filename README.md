@@ -112,6 +112,19 @@ Set one of the following environment variables before starting chatsh:
 | `ZAI_API_KEY` | Z.ai Coding Plan |
 | `ANTHROPIC_API_KEY` | Anthropic (Claude) |
 | `OPENAI_API_KEY` | OpenAI |
+| `CHATSH_COPILOT_CLIENT_ID` | GitHub Copilot — override the default OAuth app ID with your own [registered GitHub OAuth App](https://github.com/settings/developers) |
+
+### Shell environment variables
+
+chatsh exports the following variables into the wrapped shell so scripts and prompts can read them:
+
+| Variable | Value |
+|---|---|
+| `CHATSH_SESSION` | Always `1` while inside chatsh |
+| `CHATSH_PROVIDER` | Active provider ID (e.g. `github-copilot`, `z.ai-coding-plan`) |
+| `CHATSH_MODEL` | Active model ID (e.g. `claude-sonnet-4.5`) |
+
+`CHATSH_PROVIDER` and `CHATSH_MODEL` are set at startup and updated automatically whenever you run `/model` or `/connect`.
 
 Override provider and model at launch:
 

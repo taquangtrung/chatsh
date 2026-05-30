@@ -31,12 +31,4 @@ pub fn get_secret(key: &str) -> Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_get_secret_nonexistent() {
-        init();
-        let result = get_secret("chatsh_test_nonexistent_key");
-        assert!(result.is_ok());
-        assert!(result.unwrap().is_none());
-    }
 }

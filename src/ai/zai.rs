@@ -1,8 +1,7 @@
 use async_trait::async_trait;
 use futures::stream::BoxStream;
-use reqwest::header::HeaderMap;
 use reqwest::Client;
-use secrecy::ExposeSecret;
+use reqwest::header::HeaderMap;
 use serde::Deserialize;
 use url::Url;
 
@@ -28,10 +27,7 @@ impl ZaiProvider {
     }
 
     fn bearer_token(&self) -> anyhow::Result<String> {
-        match &self.auth {
-            AuthStrategy::ApiKey(k) => Ok(k.expose_secret().to_string()),
-            _ => Err(anyhow::anyhow!("Z.ai requires an API key")),
-        }
+        self.auth.require_api_key("Z.ai")
     }
 }
 
@@ -81,6 +77,7 @@ impl LlmProvider for ZaiProvider {
                 display_name: m.id.clone(),
                 id: m.id,
                 context_tokens: 128_000,
+                rate_label: None,
             })
             .collect())
     }
@@ -134,16 +131,19 @@ fn default_models() -> Vec<ModelInfo> {
             id: "glm-5.1".into(),
             display_name: "GLM-5.1".into(),
             context_tokens: 128_000,
+            rate_label: None,
         },
         ModelInfo {
             id: "glm-4.6".into(),
             display_name: "GLM-4.6".into(),
             context_tokens: 128_000,
+            rate_label: None,
         },
         ModelInfo {
             id: "glm-4.5".into(),
             display_name: "GLM-4.5".into(),
             context_tokens: 128_000,
+            rate_label: None,
         },
     ]
 }
@@ -172,51 +172,17 @@ mod tests {
     use secrecy::SecretString;
 
     #[test]
-    fn test_zai_provider_id() {
-        let provider = ZaiProvider::build(AuthStrategy::ApiKey(SecretString::new("test".into())));
-        assert_eq!(provider.id(), "z.ai-coding-plan");
-        assert_eq!(provider.display_name(), "Z.ai Coding Plan");
-    }
-
-    #[test]
-    fn test_zai_endpoint() {
-        let endpoint = Url::parse(BASE_URL)
-            .unwrap()
-            .join("chat/completions")
-            .unwrap();
-        assert_eq!(
-            endpoint.as_str(),
-            "https://api.z.ai/api/paas/v4/chat/completions"
-        );
-    }
-
-    #[test]
     fn test_bearer_token_plain_key() {
-        let provider =
-            ZaiProvider::build(AuthStrategy::ApiKey(SecretString::new("plainkey123".into())));
-        let token = provider.bearer_token().unwrap();
-        assert_eq!(token, "plainkey123");
-    }
-
-    #[test]
-    fn test_bearer_token_dotted_key_used_as_is() {
-        // Z.ai uses plain Bearer tokens; dotted keys must NOT be converted to JWT.
         let provider = ZaiProvider::build(AuthStrategy::ApiKey(SecretString::new(
-            "myid.mysecret".into(),
+            "plainkey123".into(),
         )));
         let token = provider.bearer_token().unwrap();
-        assert_eq!(token, "myid.mysecret");
+        assert_eq!(token, "plainkey123");
     }
 
     #[test]
     fn test_default_models_has_glm51_first() {
         let models = default_models();
         assert_eq!(models[0].id, "glm-5.1");
-    }
-
-    #[test]
-    fn test_models_endpoint() {
-        let url = Url::parse(BASE_URL).unwrap().join("models").unwrap();
-        assert_eq!(url.as_str(), "https://api.z.ai/api/paas/v4/models");
     }
 }

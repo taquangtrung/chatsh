@@ -1,13 +1,25 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 
 #[derive(Clone)]
 pub enum AuthStrategy {
     ApiKey(SecretString),
     OAuthDevice(Arc<OAuthState>),
     None,
+}
+
+impl AuthStrategy {
+    /// Return the API key for an `ApiKey` strategy, or an error naming
+    /// `provider` for strategies that do not carry a plain key. Shared by the
+    /// API-key providers so the error wording stays consistent.
+    pub fn require_api_key(&self, provider: &str) -> anyhow::Result<String> {
+        match self {
+            AuthStrategy::ApiKey(k) => Ok(k.expose_secret().to_string()),
+            _ => Err(anyhow::anyhow!("{provider} requires an API key")),
+        }
+    }
 }
 
 pub struct OAuthState {

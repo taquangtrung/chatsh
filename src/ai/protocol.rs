@@ -57,6 +57,8 @@ pub struct ModelInfo {
     pub id: String,
     pub display_name: String,
     pub context_tokens: u32,
+    /// Human-readable rate label, e.g. "1x" or "0.1x". None when unknown.
+    pub rate_label: Option<String>,
 }
 
 // ========================================================================

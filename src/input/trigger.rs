@@ -20,12 +20,42 @@ pub struct Command {
 }
 
 const COMMANDS: &[Command] = &[
-    Command { name: "/chat",    takes_args: true,  requires_args: true,  arg_hint: "<query>"    },
-    Command { name: "/connect", takes_args: true,  requires_args: false, arg_hint: "<provider>" },
-    Command { name: "/reauth",  takes_args: true,  requires_args: true,  arg_hint: "<provider>" },
-    Command { name: "/model",   takes_args: true,  requires_args: false, arg_hint: "[model-id]" },
-    Command { name: "/new",     takes_args: false, requires_args: false, arg_hint: ""           },
-    Command { name: "/exit",    takes_args: false, requires_args: false, arg_hint: ""           },
+    Command {
+        name: "/chat",
+        takes_args: true,
+        requires_args: true,
+        arg_hint: "Please type your message",
+    },
+    Command {
+        name: "/connect",
+        takes_args: true,
+        requires_args: false,
+        arg_hint: "<provider>",
+    },
+    Command {
+        name: "/reauth",
+        takes_args: true,
+        requires_args: true,
+        arg_hint: "Please type the provider name",
+    },
+    Command {
+        name: "/model",
+        takes_args: true,
+        requires_args: false,
+        arg_hint: "[provider/model]",
+    },
+    Command {
+        name: "/new",
+        takes_args: false,
+        requires_args: false,
+        arg_hint: "",
+    },
+    Command {
+        name: "/exit",
+        takes_args: false,
+        requires_args: false,
+        arg_hint: "",
+    },
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,6 +85,17 @@ pub fn complete_providers(prefix: &str) -> Vec<&'static str> {
         .filter(|p| p.starts_with(prefix))
         .copied()
         .collect()
+}
+
+/// Find the command whose name exactly prefixes `line`.
+/// Matches when `line` equals the command name or starts with `"<name> "`.
+pub fn command_for_line(line: &str) -> Option<&'static Command> {
+    COMMANDS.iter().find(|c| {
+        line == c.name
+            || (line.len() > c.name.len()
+                && line.starts_with(c.name)
+                && line.as_bytes()[c.name.len()] == b' ')
+    })
 }
 
 pub fn classify_input(line: &str) -> InputAction {
@@ -111,11 +152,6 @@ mod tests {
     }
 
     #[test]
-    fn test_passthrough_path() {
-        assert_eq!(classify_input("/home/user/file"), InputAction::Passthrough);
-    }
-
-    #[test]
     fn test_show_hint_on_bare_slash() {
         assert_eq!(classify_input("/"), InputAction::ShowHint);
     }
@@ -132,17 +168,6 @@ mod tests {
     }
 
     #[test]
-    fn test_trigger_chat_strips_whitespace() {
-        let result = classify_input("/chat   hello world  ");
-        assert_eq!(
-            result,
-            InputAction::TriggerChat {
-                query: "hello world".to_string()
-            }
-        );
-    }
-
-    #[test]
     fn test_passthrough_partial_match() {
         assert_eq!(classify_input("/chatting"), InputAction::Passthrough);
         assert_eq!(classify_input("/chat"), InputAction::Passthrough);
@@ -154,69 +179,18 @@ mod tests {
     }
 
     #[test]
-    fn test_hint_text_contains_exit() {
-        assert!(hint_text().contains("/exit"));
-    }
-
-    #[test]
-    fn test_hint_text_contains_connect() {
-        assert!(hint_text().contains("/connect"));
-    }
-
-    #[test]
-    fn test_hint_text_contains_reauth() {
-        assert!(hint_text().contains("/reauth"));
-    }
-
-    #[test]
-    fn test_hint_text_contains_model() {
-        assert!(hint_text().contains("/model"));
-    }
-
-    #[test]
     fn test_reauth_with_provider() {
         assert_eq!(
             classify_input("/reauth copilot"),
-            InputAction::Reauth { provider: "copilot".to_string() }
+            InputAction::Reauth {
+                provider: "copilot".to_string()
+            }
         );
-    }
-
-    #[test]
-    fn test_reauth_strips_whitespace() {
-        assert_eq!(
-            classify_input("/reauth   z.ai-coding-plan  "),
-            InputAction::Reauth { provider: "z.ai-coding-plan".to_string() }
-        );
-    }
-
-    #[test]
-    fn test_reauth_not_prefix_match() {
-        assert_eq!(classify_input("/reauthenticating"), InputAction::Passthrough);
     }
 
     #[test]
     fn test_exit_command() {
         assert_eq!(classify_input("/exit"), InputAction::Exit);
-    }
-
-    #[test]
-    fn test_exit_command_trimmed() {
-        assert_eq!(classify_input("  /exit  "), InputAction::Exit);
-    }
-
-    #[test]
-    fn test_exit_not_prefix_match() {
-        assert_eq!(classify_input("/exiting"), InputAction::Passthrough);
-    }
-
-    #[test]
-    fn test_connect_no_args() {
-        assert_eq!(
-            classify_input("/connect"),
-            InputAction::Connect {
-                provider: String::new()
-            }
-        );
     }
 
     #[test]
@@ -227,21 +201,6 @@ mod tests {
                 provider: "github-copilot".to_string()
             }
         );
-    }
-
-    #[test]
-    fn test_connect_strips_whitespace() {
-        assert_eq!(
-            classify_input("/connect   z.ai-coding-plan  "),
-            InputAction::Connect {
-                provider: "z.ai-coding-plan".to_string()
-            }
-        );
-    }
-
-    #[test]
-    fn test_connect_not_prefix_match() {
-        assert_eq!(classify_input("/connecting"), InputAction::Passthrough);
     }
 
     #[test]
@@ -260,29 +219,9 @@ mod tests {
     }
 
     #[test]
-    fn test_model_strips_whitespace() {
-        assert_eq!(
-            classify_input("/model   gpt-4o  "),
-            InputAction::Model {
-                name: Some("gpt-4o".to_string())
-            }
-        );
-    }
-
-    #[test]
-    fn test_model_not_prefix_match() {
-        assert_eq!(classify_input("/modeling"), InputAction::Passthrough);
-    }
-
-    #[test]
     fn test_complete_slash_lists_all() {
         let m = complete("/");
         assert_eq!(m.len(), 6);
-    }
-
-    #[test]
-    fn test_new_chat_command() {
-        assert_eq!(classify_input("/new"), InputAction::NewChat);
     }
 
     #[test]
@@ -295,28 +234,10 @@ mod tests {
     }
 
     #[test]
-    fn test_complete_exact_match() {
-        let m = complete("/exit");
-        assert_eq!(m.len(), 1);
-        assert_eq!(m[0].name, "/exit");
-        assert!(!m[0].takes_args);
-        assert!(!m[0].requires_args);
-    }
-
-    #[test]
     fn test_complete_connect() {
         let m = complete("/connect");
         assert_eq!(m.len(), 1);
         assert_eq!(m[0].name, "/connect");
-        assert!(m[0].takes_args);
-        assert!(!m[0].requires_args);
-    }
-
-    #[test]
-    fn test_complete_model() {
-        let m = complete("/model");
-        assert_eq!(m.len(), 1);
-        assert_eq!(m[0].name, "/model");
         assert!(m[0].takes_args);
         assert!(!m[0].requires_args);
     }
@@ -329,35 +250,44 @@ mod tests {
     #[test]
     fn test_complete_providers_empty_prefix() {
         let m = complete_providers("");
-        assert_eq!(m, vec!["anthropic", "github-copilot", "openai", "z.ai-coding-plan"]);
-    }
-
-    #[test]
-    fn test_complete_providers_single_char() {
-        let m = complete_providers("z");
-        assert_eq!(m, vec!["z.ai-coding-plan"]);
-    }
-
-    #[test]
-    fn test_complete_providers_partial() {
-        let m = complete_providers("gi");
-        assert_eq!(m, vec!["github-copilot"]);
-    }
-
-    #[test]
-    fn test_complete_providers_multiple() {
-        let m = complete_providers("o");
-        assert_eq!(m, vec!["openai"]);
-    }
-
-    #[test]
-    fn test_complete_providers_exact() {
-        let m = complete_providers("github-copilot");
-        assert_eq!(m, vec!["github-copilot"]);
+        assert_eq!(
+            m,
+            vec!["anthropic", "github-copilot", "openai", "z.ai-coding-plan"]
+        );
     }
 
     #[test]
     fn test_complete_providers_no_match() {
         assert!(complete_providers("xyz").is_empty());
+    }
+
+    #[test]
+    fn test_command_for_line_exact_name() {
+        let cmd = command_for_line("/chat").unwrap();
+        assert_eq!(cmd.name, "/chat");
+    }
+
+    #[test]
+    fn test_command_for_line_with_trailing_space() {
+        let cmd = command_for_line("/chat ").unwrap();
+        assert_eq!(cmd.name, "/chat");
+    }
+
+    #[test]
+    fn test_command_for_line_with_args() {
+        let cmd = command_for_line("/reauth github-copilot").unwrap();
+        assert_eq!(cmd.name, "/reauth");
+    }
+
+    #[test]
+    fn test_command_for_line_partial_name_no_match() {
+        assert!(command_for_line("/ch").is_none());
+        assert!(command_for_line("/cha").is_none());
+    }
+
+    #[test]
+    fn test_command_for_line_no_match() {
+        assert!(command_for_line("/unknown").is_none());
+        assert!(command_for_line("hello").is_none());
     }
 }

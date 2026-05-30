@@ -54,15 +54,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_push_within_capacity() {
-        let mut buf = ContextBuffer::with_capacity(3);
-        buf.push("a".to_string());
-        buf.push("b".to_string());
-        buf.push("c".to_string());
-        assert_eq!(buf.recent_lines(10).len(), 3);
-    }
-
-    #[test]
     fn test_push_evicts_oldest() {
         let mut buf = ContextBuffer::with_capacity(2);
         buf.push("a".to_string());

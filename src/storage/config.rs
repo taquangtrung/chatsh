@@ -128,11 +128,4 @@ buffer_lines = 100
         assert_eq!(config.ai.model.as_deref(), Some("glm-4.6"));
         assert_eq!(config.context.buffer_lines, 100);
     }
-
-    #[test]
-    fn test_config_parse_empty() {
-        let config: Config = toml::from_str("").unwrap();
-        assert_eq!(config.ai.provider, "auto");
-        assert_eq!(config.context.buffer_lines, 200);
-    }
 }

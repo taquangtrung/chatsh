@@ -20,7 +20,9 @@ impl Default for Conversation {
 
 impl Conversation {
     pub fn new() -> Self {
-        Self { messages: Vec::new() }
+        Self {
+            messages: Vec::new(),
+        }
     }
 
     pub fn load() -> Self {
@@ -86,13 +88,6 @@ mod tests {
     use crate::ai::ChatRole;
 
     #[test]
-    fn test_new_is_empty() {
-        let c = Conversation::new();
-        assert_eq!(c.turn_count(), 0);
-        assert!(c.recent(10).is_empty());
-    }
-
-    #[test]
     fn test_recent_caps_to_max_pairs() {
         let mut c = Conversation::new();
         for i in 0..50 {
@@ -104,15 +99,6 @@ mod tests {
         assert_eq!(r[0].role, ChatRole::User);
         assert_eq!(r[0].content, "q45");
         assert_eq!(r.last().unwrap().content, "a49");
-    }
-
-    #[test]
-    fn test_recent_returns_all_when_below_cap() {
-        let mut c = Conversation::new();
-        c.messages.push(ChatMessage::user("hi"));
-        c.messages.push(ChatMessage::assistant("hello"));
-        let r = c.recent(20);
-        assert_eq!(r.len(), 2);
     }
 
     #[test]

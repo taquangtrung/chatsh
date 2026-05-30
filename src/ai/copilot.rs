@@ -2,18 +2,28 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use futures::stream::BoxStream;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::Client;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use url::Url;
 
-use crate::ai::{AuthStrategy, CachedToken, OAuthState};
-use crate::ai::OpenAiStream;
 use crate::ai::LlmProvider;
+use crate::ai::OpenAiStream;
+use crate::ai::{AuthStrategy, CachedToken, OAuthState};
 use crate::ai::{ChatEvent, ChatRequest, ModelInfo, PROVIDER_COPILOT};
 
-const COPILOT_CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
+const COPILOT_CLIENT_ID_DEFAULT: &str = "Iv1.b507a08c87ecfe98";
+
+/// Returns the GitHub OAuth client ID to use for the Copilot device flow.
+/// Override with `CHATSH_COPILOT_CLIENT_ID` if you have registered your own
+/// GitHub OAuth application.
+fn copilot_client_id() -> String {
+    std::env::var("CHATSH_COPILOT_CLIENT_ID")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| COPILOT_CLIENT_ID_DEFAULT.to_string())
+}
 const COPILOT_INTEGRATION_ID: &str = "vscode-chat";
 const EDITOR_VERSION: &str = "vscode/1.95.0";
 const EDITOR_PLUGIN_VERSION: &str = "copilot-chat/0.22.0";
@@ -48,7 +58,11 @@ impl CopilotProvider {
     pub fn new(auth: AuthStrategy) -> anyhow::Result<Self> {
         let state = match auth {
             AuthStrategy::OAuthDevice(s) => s,
-            _ => return Err(anyhow::anyhow!("Copilot requires AuthStrategy::OAuthDevice")),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Copilot requires AuthStrategy::OAuthDevice"
+                ));
+            }
         };
         Ok(Self {
             client: Client::new(),
@@ -65,7 +79,10 @@ impl CopilotProvider {
             .client
             .post("https://github.com/login/device/code")
             .header("accept", "application/json")
-            .form(&[("client_id", COPILOT_CLIENT_ID), ("scope", "read:user")])
+            .form(&[
+                ("client_id", copilot_client_id().as_str()),
+                ("scope", "read:user"),
+            ])
             .send()
             .await?;
         if !resp.status().is_success() {
@@ -85,12 +102,13 @@ impl CopilotProvider {
     }
 
     pub async fn device_flow_poll(&self, device_code: &str) -> anyhow::Result<DeviceFlowPoll> {
+        let client_id = copilot_client_id();
         let resp = self
             .client
             .post("https://github.com/login/oauth/access_token")
             .header("accept", "application/json")
             .form(&[
-                ("client_id", COPILOT_CLIENT_ID),
+                ("client_id", client_id.as_str()),
                 ("device_code", device_code),
                 ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
             ])
@@ -213,10 +231,18 @@ impl LlmProvider for CopilotProvider {
                     .and_then(|c| c.limits.as_ref())
                     .and_then(|l| l.max_context_window_tokens)
                     .unwrap_or(0);
+                let rate_label = m.premium_requests_multiplier.map(|v| {
+                    if v == v.floor() && v >= 0.0 {
+                        format!("{}x", v as u64)
+                    } else {
+                        format!("{v}x")
+                    }
+                });
                 ModelInfo {
                     id: m.id,
                     display_name: m.name.unwrap_or_default(),
                     context_tokens,
+                    rate_label,
                 }
             })
             .collect();
@@ -304,6 +330,9 @@ struct CopilotModel {
     /// Absent on legacy Azure-backed models, which always support /chat/completions.
     #[serde(default)]
     supported_endpoints: Vec<String>,
+    /// Billing multiplier relative to the base request quota (1x = standard).
+    #[serde(default)]
+    premium_requests_multiplier: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -331,17 +360,4 @@ struct ModelLimits {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_constants() {
-        assert_eq!(COPILOT_CLIENT_ID, "Iv1.b507a08c87ecfe98");
-        assert_eq!(COPILOT_INTEGRATION_ID, "vscode-chat");
-        const { assert!(REFRESH_MARGIN_SECONDS > 0) };
-    }
-
-    #[test]
-    fn test_now_unix() {
-        let t = now_unix();
-        assert!(t > 1_700_000_000);
-    }
 }

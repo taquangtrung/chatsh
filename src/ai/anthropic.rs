@@ -1,8 +1,5 @@
-use anyhow::anyhow;
-use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
-use futures::StreamExt;
 use reqwest::Client;
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
@@ -10,6 +7,7 @@ use url::Url;
 
 use crate::ai::AuthStrategy;
 use crate::ai::LlmProvider;
+use crate::ai::stream::sse_chat_stream;
 use crate::ai::{ChatEvent, ChatMessage, ChatRequest, ChatRole, ModelInfo};
 
 pub struct AnthropicProvider {
@@ -44,10 +42,7 @@ impl AnthropicProvider {
     }
 
     fn api_key(&self) -> anyhow::Result<String> {
-        match &self.auth {
-            AuthStrategy::ApiKey(k) => Ok(k.expose_secret().to_string()),
-            _ => Err(anyhow!("{} requires an API key", self.display_name)),
-        }
+        self.auth.require_api_key(&self.display_name)
     }
 }
 
@@ -109,6 +104,7 @@ impl LlmProvider for AnthropicProvider {
                         .or_else(|| known.map(|k| k.display_name.clone()))
                         .unwrap_or_else(|| m.id.clone()),
                     context_tokens: known.map(|k| k.context_tokens).unwrap_or(128_000),
+                    rate_label: known.and_then(|k| k.rate_label.clone()),
                     id: m.id,
                 }
             })
@@ -119,53 +115,16 @@ impl LlmProvider for AnthropicProvider {
         let key = self.api_key()?;
         let url = self.base_url.join("v1/messages")?;
         let body = AnthropicRequest::from(&req);
-        let client = self.client.clone();
-        let provider_id = self.id.clone();
-
-        let stream = try_stream! {
-            let resp = client
-                .post(url)
-                .header("x-api-key", &key)
-                .header("authorization", format!("Bearer {key}"))
-                .header("anthropic-version", "2023-06-01")
-                .header("content-type", "application/json")
-                .json(&body)
-                .send()
-                .await
-                .map_err(|e| anyhow!("{provider_id}: {e}"))?;
-
-            let status = resp.status();
-            if !status.is_success() {
-                let text = resp.text().await.unwrap_or_default();
-                Err(anyhow!("{provider_id}: {status}: {text}"))?;
-            } else {
-                let mut bytes = resp.bytes_stream();
-                let mut buf = Vec::new();
-                while let Some(chunk) = bytes.next().await {
-                    let chunk = chunk.map_err(|e| anyhow!("{provider_id}: {e}"))?;
-                    buf.extend_from_slice(&chunk);
-                    while let Some(pos) = find_event_end(&buf) {
-                        let event_bytes = buf.drain(..pos).collect::<Vec<u8>>();
-                        if let Some(evt) = parse_sse_event(&event_bytes) {
-                            yield evt;
-                        }
-                    }
-                }
-                yield ChatEvent::Done;
-            }
-        };
-
-        Ok(Box::pin(stream.map(|res: anyhow::Result<ChatEvent>| match res {
-            Ok(ev) => ev,
-            Err(e) => ChatEvent::Error {
-                message: e.to_string(),
-            },
-        })))
+        let request = self
+            .client
+            .post(url)
+            .header("x-api-key", &key)
+            .header("authorization", format!("Bearer {key}"))
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
+            .json(&body);
+        Ok(sse_chat_stream(self.id.clone(), request, parse_sse_event))
     }
-}
-
-fn find_event_end(buf: &[u8]) -> Option<usize> {
-    buf.windows(2).position(|w| w == b"\n\n").map(|i| i + 2)
 }
 
 fn parse_sse_event(raw: &[u8]) -> Option<ChatEvent> {
@@ -183,9 +142,9 @@ fn parse_sse_event(raw: &[u8]) -> Option<ChatEvent> {
     match parsed {
         AnthropicStreamEvent::ContentBlockDelta { delta } => match delta {
             AnthropicDelta::TextDelta { text } => Some(ChatEvent::Token { text }),
-            AnthropicDelta::ThinkingDelta { thinking } => Some(ChatEvent::Thinking {
-                text: thinking,
-            }),
+            AnthropicDelta::ThinkingDelta { thinking } => {
+                Some(ChatEvent::Thinking { text: thinking })
+            }
             AnthropicDelta::Other => None,
         },
         AnthropicStreamEvent::MessageStop => Some(ChatEvent::Done),
@@ -319,11 +278,13 @@ fn default_models() -> Vec<ModelInfo> {
             id: "claude-sonnet-4-20250514".into(),
             display_name: "Claude Sonnet 4".into(),
             context_tokens: 200_000,
+            rate_label: None,
         },
         ModelInfo {
             id: "claude-haiku-4-20250414".into(),
             display_name: "Claude Haiku 4".into(),
             context_tokens: 200_000,
+            rate_label: None,
         },
     ]
 }
@@ -360,12 +321,6 @@ mod tests {
         assert_eq!(body.messages.len(), 1);
         assert!(body.thinking.is_some());
         assert_eq!(body.max_tokens, MAX_TOKENS_WITH_THINKING);
-    }
-
-    #[test]
-    fn test_find_event_end() {
-        assert_eq!(find_event_end(b"data:{}\n\n"), Some(9));
-        assert_eq!(find_event_end(b"hello"), None);
     }
 
     #[test]

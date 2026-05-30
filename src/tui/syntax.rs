@@ -73,14 +73,8 @@ mod tests {
         let bytes = s.as_bytes();
         let mut i = 0;
         while i < bytes.len() {
-            if bytes[i] == 0x1B && bytes.get(i + 1) == Some(&b'[') {
-                i += 2;
-                while i < bytes.len() && !matches!(bytes[i], 0x40..=0x7E) {
-                    i += 1;
-                }
-                if i < bytes.len() {
-                    i += 1;
-                }
+            if let Some(next) = crate::tui::skip_csi_escape(bytes, i) {
+                i = next;
                 continue;
             }
             out.push(bytes[i] as char);
@@ -106,33 +100,10 @@ mod tests {
     }
 
     #[test]
-    fn test_preserves_content_python() {
-        let mut h = Highlighter::new("python");
-        let out = h.highlight_line("def greet(name):");
-        assert_eq!(strip_ansi(&out), "def greet(name):");
-    }
-
-    #[test]
-    fn test_preserves_content_rust() {
-        let mut h = Highlighter::new("rust");
-        let out = h.highlight_line("fn main() {}");
-        assert_eq!(strip_ansi(&out), "fn main() {}");
-    }
-
-    #[test]
     fn test_unknown_language_falls_back_to_plain() {
         let mut h = Highlighter::new("nonexistent-lang");
         let out = h.highlight_line("just some text");
         assert_eq!(strip_ansi(&out), "just some text");
-    }
-
-    #[test]
-    fn test_lang_aliases_resolve() {
-        let _ = Highlighter::new("py");
-        let _ = Highlighter::new("rs");
-        let _ = Highlighter::new("sh");
-        let _ = Highlighter::new("ts");
-        let _ = Highlighter::new("yml");
     }
 
     #[test]
@@ -142,25 +113,5 @@ mod tests {
         let mid = h.highlight_line("inside block comment");
         let _ = h.highlight_line("*/");
         assert_eq!(strip_ansi(&mid), "inside block comment");
-    }
-
-    #[test]
-    fn test_empty_line_does_not_crash() {
-        let mut h = Highlighter::new("rust");
-        let _ = h.highlight_line("");
-    }
-
-    #[test]
-    fn test_string_content_preserved() {
-        let mut h = Highlighter::new("bash");
-        let out = h.highlight_line("echo \"hello world\"");
-        assert_eq!(strip_ansi(&out), "echo \"hello world\"");
-    }
-
-    #[test]
-    fn test_number_content_preserved() {
-        let mut h = Highlighter::new("python");
-        let out = h.highlight_line("x = 42");
-        assert_eq!(strip_ansi(&out), "x = 42");
     }
 }

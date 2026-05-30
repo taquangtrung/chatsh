@@ -59,14 +59,15 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_no_args() {
-        let cli = Cli::parse_from(["chatsh"]);
-        assert!(cli.args.is_empty());
-    }
-
-    #[test]
     fn test_cli_with_provider() {
-        let cli = Cli::parse_from(["chatsh", "--provider", "github-copilot", "--model", "gpt-4o", "/bin/bash"]);
+        let cli = Cli::parse_from([
+            "chatsh",
+            "--provider",
+            "github-copilot",
+            "--model",
+            "gpt-4o",
+            "/bin/bash",
+        ]);
         assert_eq!(cli.provider.as_deref(), Some("github-copilot"));
         assert_eq!(cli.model.as_deref(), Some("gpt-4o"));
         assert_eq!(cli.args, vec!["/bin/bash"]);

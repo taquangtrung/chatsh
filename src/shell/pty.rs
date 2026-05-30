@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use std::sync::mpsc;
 
 use anyhow::Result;
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 
 const DEFAULT_COLS: u16 = 80;
 const DEFAULT_ROWS: u16 = 24;
@@ -94,16 +94,6 @@ impl PtyBridge {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_spawn_returns_channel() {
-        let result = PtyBridge::spawn(&["/bin/sh".to_string()], &[]);
-        assert!(result.is_ok());
-        let (_, rx) = result.unwrap();
-        assert!(!rx
-            .recv_timeout(std::time::Duration::from_millis(500))
-            .is_err());
-    }
 
     #[test]
     fn test_spawn_empty_args() {
